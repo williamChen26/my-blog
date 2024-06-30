@@ -4,7 +4,8 @@ import sitemap from "@astrojs/sitemap";
 import tailwind from "@astrojs/tailwind";
 
 export default defineConfig({
-  site: "https://astro-nano-demo.vercel.app",
+  site: "https://williamChen26.github.io",
+  base: "blog",
   image: {
     service: squooshImageService(),
   },
