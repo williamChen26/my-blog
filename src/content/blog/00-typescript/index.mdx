@@ -1,0 +1,228 @@
+---
+title: "关于Typescript，搞点实用的（持续更新...）"
+description: "Features, enhancements, and changes."
+date: "2024-01-01"
+---
+
+---
+
+## Typescript 🔎，从抵触到热爱
+
+对于`ts`，记我接触编程起，第一家公司还是用 Angular，集成了 Typescript，所以接触ts还是比较早的，可以说在编程懵懂期我是十分抵触ts的，这不就是一个 js 前面加个类型标注吗？js 给人的标签和历史使命不应该就是简单吗？现在又搞什么静态类型，这啥玩意啊？带着这些年的工作经验和踩坑，我不禁想问：我是啥玩意啊？敢质疑我`Typescript`大爹！
+
+这里我想分享一些使用的 ts 类型操作，希望能对大家有用。
+
+## Infer 的用法
+
+```typescript
+// 获取函数的参数props
+type GetProp<T extends  (..args: any) => any> = T extends (arg: infer P) => any ? P : void;
+```
+
+`Infer` 这个关键字，了解的人不多，但是是一个非常有用的功能，infer可以在extends的条件语句中，可以推断待推断的类型，以我简单的理解，他像是用来定义一个占位符，这个占位符最终会填入什么样的数据呢？它需要你在使用它的使用定义，这涉及泛型的知识点，这里就不多做解释了。
+
+这个高级类型的灵感来源两个高级类型，分别是：
+
+```typescript
+type Parameters<T extends (..args: any) => any> = T extends (..args:infer P) => any ? P : never
+```
+
+```typescript
+type ReturnType<T extends (...args: any) => any> = T extends (...args:any) => infer R ? R ? any
+```
+
+你会发现`GetProp`跟`Parameters`非常像，原因是`Parameters`会给你返回元祖类型，这个是不符合我的预期的。我想要的就是参数透传：
+
+```typescript
+const onDownload = (props?: GetProp<typeof openDownload>) => {};
+```
+
+像这里，我直接将`openDownload`的参数透传给了`onDownload`，如果使用`Parameters`，我们可能需要这么做：
+
+```typescript
+const onDownload = (...props: Parameters<typeof openDownload>) => {};
+
+const onDownload = (props?: Parameters<typeof openDownload>[0]) => {};
+```
+
+因为在之前的项目开发中，我们不推崇函数传参变得复杂，如果存在多个参数，习惯上喜欢用对象来聚合成一个，这样`Parameters`用起来显得有点不优雅，我就实现了`GetProp`这样的高级类型取代`Parameters`。
+
+Infer关键字在封装一些高级类型时特别有用，以及在学习类型体操时，能理解`infer`，那能证明你是真的学明白了。
+
+## `ValueOf<T>` VS `ENUM`
+
+```typescript
+export type ValueOf<T> = T[keyof T];
+```
+`ValueOf<T>`是一个辅助泛型，通常用于将常量对象的值转成联合类型，在之前的项目里，我们习惯性的用它来取代枚举`enum`，用法如下：
+```typescript
+const actionTypeMap = {
+    loading: 'loading',
+    upgrade: 'upgrade',
+    download: 'download',
+} as const;
+
+export type ActionType = ValueOf<typeof actionTypeMap>;
+```
+
+在很多场景下，我认为`ValueOf<T>`是一个最优解，对比`enum`，特别是在一些组件或者函数的 prop 中，联合类型在编辑器中会有更友好的类型提示与代码补全。
+
+`enum`在`Typescript`中常用来定义一组常量，放在一个对象里面管理，还记得在团队在定义`Typescript`开发标准时，对`enum`和联合类型有过比较激烈的讨论，有人认为存在即合理，有人认为应该尽量避免使用`enum`，给到的理由有一下几点：
+
+- 拓展性和可维护性：在枚举中添加或删除值会导致其内部值的重新分配，可能会影响其他依赖该枚举的代码。维护起来可能不如常量对象灵活。
+```typescript
+enum Colors {
+  Red = 1,
+  Green,
+  Blue
+}
+
+// 添加新值
+enum Colors {
+  Red = 1,
+  Yellow,  // 新值插入
+  Green,
+  Blue
+}
+```
+Green 和 Blue 的值会因为插入了 Yellow 而改变。如果依赖这些值的代码没有相应更新，会导致错误
+- 编译器提示和类型推断：联合类型和常量对象在编译器可以更好地进行类型推断和自动补全。例如，如果常量对象包含字符串值，编译器会提供更好的代码提示和自动补全。
+- 模块间的依赖性：在开发独立模块时，对于`enum`，需要暴露枚举定义以供其他模块使用，这会增加模块之间的耦合
+
+而我是属于中立派，在我看来，`enum`是有存在的必要的，比如需要双向映射或者有明确意图的行为（比如状态Status定义）使用`enum`是最合适的选择，但是枚举的泛用确实会给开发者带来额外的心智负担
+
+## React组件重载
+
+`Typescript`具备函数重载能力，在 TypeScript 中，我们可以通过编写重载签名来指定可以以不同方式调用的函数。为此，编写一些函数签名（通常两个或更多），然后是函数主体：
+
+```typescript
+objectRotate(objectOrAngle: fabric.Object, angle: number): fabric.Object | null;
+objectRotate(objectOrAngle: number): fabric.Object | null;
+objectRotate(objectOrAngle: fabric.Object | number, angle?: number): fabric.Object | null {
+  if (objectOrAngle instanceof fabric.Object && angle) {
+    return objectOrAngle.rotate(angle);
+  }
+  const currentObject = this.canvas.getActiveObject();
+  if (currentObject) {
+    const object = currentObject.rotate(objectOrAngle as number);
+    this.canvas.fire('object:modified', { target: object });
+    return object;
+  }
+  return null;
+}
+```
+这个是我在封装 Fabric 编辑器时写的一个函数，在这个例子中，我们写了两个重载：一个接受两个参数，另一个接受一个参数。前两个签名称为重载签名，后面是实现签名，在实际的使用场景中，`TypeScript`会将函数调用解析为单个重载，在编辑器中会根据实际的参数给予良好的代码提示和自动补全。
+
+那么React组件怎么做到具备重载能力呢？简单来说就是动态的props类型控制，但不是联合类型，区别在于可以prop具备联动性，比如某个prop值确定之后，可以更新组件的剩余prop的数量和类型。实现逻辑很简单，利用交叉类型（Intersection Types）实现：
+
+```typescript
+type Specific<
+  T extends ACTION_BUTTON,
+  U extends ACTION_BUTTON[],
+  V extends {
+    downloadItems?: {
+      key: string | number;
+      label: React.ReactNode;
+    }[];
+    downloadUrl?: string;
+    copy?: string;
+    defaultFavorites?: boolean;
+  },
+> = T extends U[number] ? V : {};
+
+// 不同的icons需要提供专门的props
+type Props<T extends ACTION_BUTTON[]> = {
+  actions: T;
+  trackerProps?: {
+    [key in ACTION_BUTTON]: { publish?: string };
+  };
+  id: string;
+  handleAction?: ImageItemActions;
+} & Specific<
+  ACTION_BUTTON.DOWNLOAD,
+  T,
+  {
+    downloadItems?: {
+      key: string | number;
+      label: React.ReactNode;
+    }[];
+    downloadUrl: string;
+  }
+> &
+  Specific<
+    ACTION_BUTTON.COPY,
+    T,
+    {
+      copy: string;
+    }
+  > &
+  Specific<
+    ACTION_BUTTON.SWAP,
+    T,
+    {
+      item: AssetsItem;
+      copy: string;
+    }
+  > &
+  Specific<
+    ACTION_BUTTON.FAVORITE,
+    T,
+    {
+      defaultFavorites: boolean;
+    }
+  >;
+```
+
+上面是我实际开发中的例子，定义了一个props，当组件 props 类型定义为`Props`时，在调用该组件时，类型提示就变得有趣起来了：
+
+```typescript
+const ActionIcons: <T extends ACTION_BUTTON[]>(props: Props<T>) => React.ReactNode = (props) => { /** ... */ }
+```
+
+![component](/gif/00-01.gif)
+
+可以看到，当我尝试在 actions 中添加 `ACTION_BUTTON.DOWNLOAD` 时，ts 提示报错了，提示我需要补充 downloadUrl 属性，actions 没有 `ACTION_BUTTON.DOWNLOAD` 并不要求我补充 downloadUrl ，这是因为在 `Specific` 接口中我指定了一些泛型：
+
+```typescript
+type Specific<
+  T extends ACTION_BUTTON,
+  U extends ACTION_BUTTON[],
+  V extends {
+    downloadItems?: {
+      key: string | number;
+      label: React.ReactNode;
+    }[];
+    downloadUrl?: string;
+    copy?: string;
+    defaultFavorites?: boolean;
+  },
+> = T extends U[number] ? V : {};
+```
+
+拆解 `Props`
+
+```typescript
+// 不同的icons需要提供专门的props
+type Props<T extends ACTION_BUTTON[]> = {
+  actions: T;
+  trackerProps?: {
+    [key in ACTION_BUTTON]: { publish?: string };
+  };
+  id: string;
+  handleAction?: ImageItemActions;
+} & Specific<
+  ACTION_BUTTON.DOWNLOAD,
+  T,
+  {
+    downloadItems?: {
+      key: string | number;
+      label: React.ReactNode;
+    }[];
+    downloadUrl: string;
+  }
+>;
+```
+
+只有当 actions 中存在 `ACTION_BUTTON.DOWNLOAD` 时，需要补充 `downloadItems` 和 `downloadUrl` ， `downloadUrl` 是必需的，所有组件会报错，如果在没有 `ACTION_BUTTON.DOWNLOAD` 时，`downloadUrl` 传入是会报错的
+
+![component](./00-02.png)
